@@ -134,16 +134,27 @@ download_binary() {
     TMP_DIR=$(mktemp -d)
     
     # Скачиваем бинарь
-    if ! curl -L -o "$TMP_DIR/$APP_NAME" "$DOWNLOAD_URL"; then
-        log_error "Не удалось скачать $APP_NAME"
-        log_info "Попытка сборки из исходников..."
-        build_from_source
-        return
+    log_info "Скачиваем с: $DOWNLOAD_URL"
+    if ! curl -fL -o "$TMP_DIR/$APP_NAME" "$DOWNLOAD_URL"; then
+        log_error "Не удалось скачать $APP_NAME. Проверьте релиз на GitHub: $REPO_URL/releases"
+        rm -rf "$TMP_DIR"
+        exit 1
+    fi
+    
+    # Проверяем размер файла
+    FILE_SIZE=$(stat -c%s "$TMP_DIR/$APP_NAME" 2>/dev/null || echo "0")
+    if [[ "$FILE_SIZE" -lt 1000000 ]]; then  # Меньше 1MB - подозрительно
+        log_error "Скачанный файл слишком мал ($FILE_SIZE байт). Возможно, релиз не содержит бинарь."
+        log_error "Проверьте релиз: $REPO_URL/releases/latest"
+        rm -rf "$TMP_DIR"
+        exit 1
     fi
     
     # Устанавливаем
     chmod +x "$TMP_DIR/$APP_NAME"
     mv "$TMP_DIR/$APP_NAME" "$INSTALL_DIR/"
+    
+    log_success "Бинарь установлен (размер: $FILE_SIZE байт)"
     
     # Очистка
     rm -rf "$TMP_DIR"
