@@ -16,7 +16,7 @@ docker run -d \
 
 ### Установка на Linux
 ```bash
-curl -fsSL https://raw.githubusercontent.com/your-repo/ocuai/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/eduard256/Ocuai/main/scripts/install.sh | bash
 ```
 
 ## 🚀 Возможности
@@ -116,8 +116,8 @@ MIT License. См. [LICENSE](LICENSE) для деталей.
 
 ```bash
 # Клонирование
-git clone https://github.com/your-repo/ocuai.git
-cd ocuai
+git clone https://github.com/eduard256/Ocuai.git
+cd Ocuai
 
 # Установка зависимостей
 go mod download

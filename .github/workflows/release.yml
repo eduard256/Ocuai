@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+    
+    - name: Build frontend
+      run: |
+        cd web
+        npm install
+        npm run build
+    
+    - name: Build binary
+      run: |
+        GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o ocuai-linux-amd64 ./cmd/ocuai
+        chmod +x ocuai-linux-amd64
+    
+    - name: Upload binary to release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: |
+          ocuai-linux-amd64
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 

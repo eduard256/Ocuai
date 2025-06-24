@@ -11,7 +11,7 @@ NC='\033[0m' # No Color
 
 # Конфигурация
 APP_NAME="ocuai"
-REPO_URL="https://github.com/your-repo/ocuai"
+REPO_URL="https://github.com/eduard256/Ocuai"
 VERSION="latest"
 INSTALL_DIR="/usr/local/bin"
 DATA_DIR="/var/lib/ocuai"
