@@ -1,9 +1,11 @@
 package web
 
 import (
+	"bytes"
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -339,7 +341,7 @@ func (s *Server) deleteCameraHandler(w http.ResponseWriter, r *http.Request) {
 
 // testCameraHandler тестирует подключение к камере
 func (s *Server) testCameraHandler(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	_ = chi.URLParam(r, "id") // Используем для предотвращения ошибки unused variable
 
 	// Здесь должна быть логика тестирования подключения
 	// Пока возвращаем заглушку
@@ -564,8 +566,15 @@ func (s *Server) setupStaticFiles(r chi.Router) {
 			return
 		}
 
+		// Читаем содержимое файла в память для подачи клиенту
+		content, err := io.ReadAll(file)
+		if err != nil {
+			s.fallbackHandler(w, r)
+			return
+		}
+
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		http.ServeContent(w, r, "index.html", stat.ModTime(), file.(fs.File))
+		http.ServeContent(w, r, "index.html", stat.ModTime(), bytes.NewReader(content))
 	})
 }
 

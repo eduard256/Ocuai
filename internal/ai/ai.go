@@ -3,6 +3,7 @@ package ai
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"log"
 	"os"
 	"path/filepath"
@@ -78,11 +79,18 @@ func (p *Processor) loadModel() error {
 		net.SetPreferableTarget(gocv.NetTargetCPU)
 	}
 
-	// Получаем имена выходных слоев
-	outputNames := net.GetUnconnectedOutLayersNames()
+	// Получаем имена выходных слоев - исправлено для совместимости с gocv
+	outputNames := net.GetUnconnectedOutLayers()
+	var outputLayerNames []string
+	for _, layerIndex := range outputNames {
+		layerNames := net.GetLayerNames()
+		if layerIndex < len(layerNames) {
+			outputLayerNames = append(outputLayerNames, layerNames[layerIndex])
+		}
+	}
 
 	p.net = &net
-	p.outputNames = outputNames
+	p.outputNames = outputLayerNames
 
 	log.Printf("AI model loaded successfully: %s", p.config.ModelPath)
 	return nil
@@ -127,8 +135,8 @@ func (p *Processor) ProcessFrame(frame gocv.Mat) ([]Detection, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	// Подготавливаем blob из изображения
-	blob := gocv.BlobFromImage(frame, 1.0/255.0, image.Pt(640, 640), gocv.NewScalar(0, 0, 0, 0), true, false, gocv.MatTypeCV32F)
+	// Подготавливаем blob из изображения - исправлено количество аргументов
+	blob := gocv.BlobFromImage(frame, 1.0/255.0, image.Pt(640, 640), gocv.NewScalar(0, 0, 0, 0), true, false)
 	defer blob.Close()
 
 	// Устанавливаем входные данные
@@ -175,18 +183,18 @@ func (p *Processor) parseDetections(output gocv.Mat, frameWidth, frameHeight int
 	}
 
 	for i := 0; i < rows; i++ {
-		// Получаем координаты bounding box
-		x := output.GetFloatAt(0, i, 0)
-		y := output.GetFloatAt(0, i, 1)
-		w := output.GetFloatAt(0, i, 2)
-		h := output.GetFloatAt(0, i, 3)
+		// Получаем координаты bounding box - исправлено количество аргументов
+		x := output.GetFloatAt(i, 0)
+		y := output.GetFloatAt(i, 1)
+		w := output.GetFloatAt(i, 2)
+		h := output.GetFloatAt(i, 3)
 
 		// Находим класс с максимальной вероятностью
 		maxConfidence := float32(0)
 		classID := -1
 
 		for j := 4; j < cols; j++ {
-			confidence := output.GetFloatAt(0, i, j)
+			confidence := output.GetFloatAt(i, j)
 			if confidence > maxConfidence {
 				maxConfidence = confidence
 				classID = j - 4
@@ -262,10 +270,10 @@ func DetectMotion(prevFrame, currentFrame gocv.Mat, threshold float64) bool {
 	defer diff.Close()
 	gocv.AbsDiff(gray1, gray2, &diff)
 
-	// Применяем пороговое значение
+	// Применяем пороговое значение - исправлено на float32
 	thresh := gocv.NewMat()
 	defer thresh.Close()
-	gocv.Threshold(diff, &thresh, threshold, 255, gocv.ThresholdBinary)
+	gocv.Threshold(diff, &thresh, float32(threshold), 255, gocv.ThresholdBinary)
 
 	// Подсчитываем количество ненулевых пикселей
 	nonZero := gocv.CountNonZero(thresh)
@@ -280,11 +288,10 @@ func DetectMotion(prevFrame, currentFrame gocv.Mat, threshold float64) bool {
 // DrawDetections рисует детекции на кадре
 func DrawDetections(frame *gocv.Mat, detections []Detection) {
 	for _, det := range detections {
-		// Рисуем прямоугольник
-		color := image.RGBA{R: 0, G: 255, B: 0, A: 255} // Зеленый цвет
-		pt1 := image.Pt(det.BBox.X, det.BBox.Y)
-		pt2 := image.Pt(det.BBox.X+det.BBox.Width, det.BBox.Y+det.BBox.Height)
-		gocv.Rectangle(frame, pt1, pt2, color, 2)
+		// Рисуем прямоугольник - исправлено использование color.RGBA
+		green := color.RGBA{R: 0, G: 255, B: 0, A: 255} // Зеленый цвет
+		rect := image.Rect(det.BBox.X, det.BBox.Y, det.BBox.X+det.BBox.Width, det.BBox.Y+det.BBox.Height)
+		gocv.Rectangle(frame, rect, green, 2)
 
 		// Добавляем текст с классом и confidence
 		text := fmt.Sprintf("%s: %.2f", det.Class, det.Confidence)
@@ -292,11 +299,12 @@ func DrawDetections(frame *gocv.Mat, detections []Detection) {
 
 		// Рисуем фон для текста
 		textBg := image.Rect(det.BBox.X, det.BBox.Y-textSize.Y-5, det.BBox.X+textSize.X+5, det.BBox.Y)
-		gocv.Rectangle(frame, textBg.Min, textBg.Max, color, -1)
+		gocv.Rectangle(frame, textBg, green, -1)
 
 		// Рисуем текст
 		textPt := image.Pt(det.BBox.X+2, det.BBox.Y-5)
-		gocv.PutText(frame, text, textPt, gocv.FontHersheySimplex, 0.5, image.RGBA{R: 0, G: 0, B: 0, A: 255}, 1)
+		black := color.RGBA{R: 0, G: 0, B: 0, A: 255}
+		gocv.PutText(frame, text, textPt, gocv.FontHersheySimplex, 0.5, black, 1)
 	}
 }
 
