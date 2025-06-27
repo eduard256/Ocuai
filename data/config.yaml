@@ -1,0 +1,33 @@
+server:
+    host: 0.0.0.0
+    port: "8080"
+storage:
+    database_path: data/db/ocuai.db
+    video_path: data/videos
+    retention_days: 7
+    max_video_size_mb: 50
+security:
+    session_secret: ""
+telegram:
+    token: ""
+    allowed_users: []
+    notification_hours: 08:00-22:00
+streaming:
+    rtsp_port: 8554
+    webrtc_port: 8555
+    buffer_size_kb: 1024
+ai:
+    model_path: data/models/yolov8n.onnx
+    enabled: false
+    threshold: 0.5
+    classes:
+        - person
+        - car
+        - truck
+        - bus
+        - motorcycle
+        - bicycle
+        - dog
+        - cat
+    device_type: cpu
+cameras: []

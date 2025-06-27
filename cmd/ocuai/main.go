@@ -21,8 +21,8 @@ import (
 	"ocuai/internal/web"
 )
 
-// Web assets will be embedded during build process
-// //go:embed all:web/dist
+// TODO: Fix embed path after build
+// go:embed web/dist/*
 var webAssets embed.FS
 
 var (
@@ -99,7 +99,10 @@ func main() {
 	}()
 
 	// Инициализация веб-сервера
-	webServer := web.New(cfg, store, eventManager, streamingServer, webAssets)
+	webServer, err := web.New(cfg, store, eventManager, streamingServer, webAssets, store.GetDB())
+	if err != nil {
+		log.Fatalf("Failed to initialize web server: %v", err)
+	}
 
 	// Запуск веб-сервера
 	server := &http.Server{

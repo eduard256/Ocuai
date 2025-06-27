@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"database/sql"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -9,9 +10,11 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
+	"ocuai/internal/auth"
 	"ocuai/internal/config"
 	"ocuai/internal/events"
 	"ocuai/internal/storage"
@@ -32,6 +35,8 @@ type Server struct {
 	streamingServer *streaming.Server
 	webAssets       embed.FS
 	upgrader        websocket.Upgrader
+	authService     *auth.AuthService
+	authHandlers    *auth.AuthHandlers
 }
 
 // APIResponse представляет стандартный ответ API
@@ -64,19 +69,29 @@ type SystemStats struct {
 }
 
 // New создает новый веб-сервер
-func New(cfg *config.Config, storage *storage.Storage, eventManager *events.Manager, streamingServer *streaming.Server, webAssets embed.FS) *Server {
+func New(cfg *config.Config, storage *storage.Storage, eventManager *events.Manager, streamingServer *streaming.Server, webAssets embed.FS, db *sql.DB) (*Server, error) {
+	// Инициализируем сервис авторизации
+	authService, err := auth.New(db, cfg.Security.SessionSecret)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize auth service: %w", err)
+	}
+
+	authHandlers := auth.NewHandlers(authService)
+
 	return &Server{
 		config:          cfg,
 		storage:         storage,
 		eventManager:    eventManager,
 		streamingServer: streamingServer,
 		webAssets:       webAssets,
+		authService:     authService,
+		authHandlers:    authHandlers,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				return true // В продакшене нужна более строгая проверка
 			},
 		},
-	}
+	}, nil
 }
 
 // Router создает и настраивает роутер
@@ -101,41 +116,55 @@ func (s *Server) Router() http.Handler {
 
 	// API маршруты
 	r.Route("/api", func(r chi.Router) {
-		r.Get("/health", s.healthHandler)
-		r.Get("/stats", s.statsHandler)
-
-		// Камеры
-		r.Route("/cameras", func(r chi.Router) {
-			r.Get("/", s.getCamerasHandler)
-			r.Post("/", s.createCameraHandler)
-			r.Get("/{id}", s.getCameraHandler)
-			r.Put("/{id}", s.updateCameraHandler)
-			r.Delete("/{id}", s.deleteCameraHandler)
-			r.Post("/{id}/test", s.testCameraHandler)
+		// Публичные маршруты авторизации
+		r.Route("/auth", func(r chi.Router) {
+			r.Get("/setup", s.authHandlers.CheckSetupHandler)
+			r.Post("/register", s.authHandlers.RegisterHandler)
+			r.Post("/login", s.authHandlers.LoginHandler)
+			r.Post("/logout", s.authHandlers.LogoutHandler)
+			r.Get("/status", s.authHandlers.StatusHandler)
 		})
 
-		// События
-		r.Route("/events", func(r chi.Router) {
-			r.Get("/", s.getEventsHandler)
-			r.Get("/{id}", s.getEventHandler)
-			r.Delete("/{id}", s.deleteEventHandler)
-		})
+		// Защищенные маршруты
+		r.Route("/", func(r chi.Router) {
+			r.Use(s.authService.RequireAuth())
 
-		// Стриминг
-		r.Route("/streaming", func(r chi.Router) {
-			r.Get("/cameras/{id}/stream", s.streamHandler)
-			r.Get("/cameras/{id}/snapshot", s.snapshotHandler)
-		})
+			r.Get("/health", s.healthHandler)
+			r.Get("/stats", s.statsHandler)
 
-		// Настройки
-		r.Route("/settings", func(r chi.Router) {
-			r.Get("/", s.getSettingsHandler)
-			r.Put("/", s.updateSettingsHandler)
+			// Камеры
+			r.Route("/cameras", func(r chi.Router) {
+				r.Get("/", s.getCamerasHandler)
+				r.Post("/", s.createCameraHandler)
+				r.Get("/{id}", s.getCameraHandler)
+				r.Put("/{id}", s.updateCameraHandler)
+				r.Delete("/{id}", s.deleteCameraHandler)
+				r.Post("/{id}/test", s.testCameraHandler)
+			})
+
+			// События
+			r.Route("/events", func(r chi.Router) {
+				r.Get("/", s.getEventsHandler)
+				r.Get("/{id}", s.getEventHandler)
+				r.Delete("/{id}", s.deleteEventHandler)
+			})
+
+			// Стриминг
+			r.Route("/streaming", func(r chi.Router) {
+				r.Get("/cameras/{id}/stream", s.streamHandler)
+				r.Get("/cameras/{id}/snapshot", s.snapshotHandler)
+			})
+
+			// Настройки
+			r.Route("/settings", func(r chi.Router) {
+				r.Get("/", s.getSettingsHandler)
+				r.Put("/", s.updateSettingsHandler)
+			})
 		})
 	})
 
-	// WebSocket для реального времени
-	r.Get("/ws", s.websocketHandler)
+	// WebSocket для реального времени (защищен)
+	r.With(s.authService.RequireAuth()).Get("/ws", s.websocketHandler)
 
 	// Статические файлы веб-интерфейса
 	s.setupStaticFiles(r)
@@ -505,27 +534,61 @@ func (s *Server) websocketHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("WebSocket client connected")
 
-	// Отправляем начальные данные
-	stats, _ := s.eventManager.GetSystemStats()
-	conn.WriteJSON(map[string]interface{}{
-		"type": "stats",
-		"data": stats,
-	})
+	// Get session for logging
+	session, _ := s.authService.GetSession(r)
+	if session != nil {
+		log.Printf("WebSocket authenticated user: %s", session.Username)
+	}
 
-	// Периодически отправляем обновления
+	// Send initial stats
+	stats, _ := s.eventManager.GetSystemStats()
+	if err := conn.WriteJSON(map[string]interface{}{
+		"type": "stats_update",
+		"data": stats,
+	}); err != nil {
+		log.Printf("WebSocket initial write error: %v", err)
+		return
+	}
+
+	// Create channels for communication
+	done := make(chan struct{})
+
+	// Handle incoming messages
+	go func() {
+		defer close(done)
+		for {
+			var msg map[string]interface{}
+			if err := conn.ReadJSON(&msg); err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					log.Printf("WebSocket read error: %v", err)
+				}
+				return
+			}
+			log.Printf("WebSocket received: %v", msg)
+		}
+	}()
+
+	// Send periodic updates
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
+		case <-done:
+			return
 		case <-ticker.C:
 			stats, err := s.eventManager.GetSystemStats()
 			if err != nil {
+				log.Printf("Failed to get stats: %v", err)
 				continue
 			}
 
+			// Add current timestamp to stats
+			stats["timestamp"] = time.Now().Unix()
+			stats["current_time"] = time.Now().Format("15:04:05")
+
 			if err := conn.WriteJSON(map[string]interface{}{
-				"type": "stats",
+				"type": "stats_update",
 				"data": stats,
 			}); err != nil {
 				log.Printf("WebSocket write error: %v", err)
@@ -537,13 +600,28 @@ func (s *Server) websocketHandler(w http.ResponseWriter, r *http.Request) {
 
 // setupStaticFiles настраивает раздачу статических файлов
 func (s *Server) setupStaticFiles(r chi.Router) {
-	// Извлекаем встроенные файлы
-	webFS, err := fs.Sub(s.webAssets, "web/dist")
+	// Try to extract embedded files from different possible paths
+	var webFS fs.FS
+	var err error
+
+	// Try web/assets first (production build location)
+	webFS, err = fs.Sub(s.webAssets, "web/assets")
 	if err != nil {
-		log.Printf("Failed to create web filesystem: %v", err)
-		// Используем заглушку
-		r.Get("/*", s.fallbackHandler)
-		return
+		// Try web/dist as fallback
+		webFS, err = fs.Sub(s.webAssets, "web/dist")
+		if err != nil {
+			log.Printf("Failed to create web filesystem: %v", err)
+			// Use local filesystem for development
+			localPath := "./web/assets"
+			if _, err := os.Stat(localPath); err == nil {
+				log.Printf("Using local filesystem at %s", localPath)
+				r.Handle("/*", http.FileServer(http.Dir(localPath)))
+				return
+			}
+			// Use fallback handler
+			r.Get("/*", s.fallbackHandler)
+			return
+		}
 	}
 
 	// Раздаем статические файлы

@@ -13,6 +13,11 @@ type Storage struct {
 	db *sql.DB
 }
 
+// GetDB возвращает соединение с базой данных
+func (s *Storage) GetDB() *sql.DB {
+	return s.db
+}
+
 // Event представляет событие в системе
 type Event struct {
 	ID            int       `json:"id"`

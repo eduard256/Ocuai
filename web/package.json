@@ -1,34 +1,32 @@
 {
-  "name": "ocuai-web",
-  "version": "1.0.0",
-  "description": "Ocuai Web Interface",
-  "main": "index.js",
+  "name": "web",
+  "version": "0.1.0",
+  "private": true,
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "lint": "eslint . --ext .js,.svelte",
-    "format": "prettier --write ."
-  },
-  "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^3.0.1",
-    "@tailwindcss/forms": "^0.5.7",
-    "autoprefixer": "^10.4.16",
-    "eslint": "^8.55.0",
-    "eslint-plugin-svelte": "^2.35.1",
-    "postcss": "^8.4.32",
-    "prettier": "^3.1.1",
-    "prettier-plugin-svelte": "^3.1.2",
-    "svelte": "^4.2.8",
-    "tailwindcss": "^3.3.6",
-    "terser": "^5.43.1",
-    "vite": "^5.0.8"
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "next lint"
   },
   "dependencies": {
-    "@heroicons/react": "^2.0.18",
-    "chart.js": "^4.4.1",
-    "lucide-svelte": "^0.294.0",
-    "svelte-chartjs": "^3.1.5"
+    "@types/js-cookie": "^3.0.6",
+    "axios": "^1.10.0",
+    "js-cookie": "^3.0.5",
+    "lucide-react": "^0.525.0",
+    "next": "15.3.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zustand": "^5.0.6"
   },
-  "type": "module"
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "15.3.4",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
 }

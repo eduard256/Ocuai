@@ -15,6 +15,7 @@ import (
 type Config struct {
 	Server    ServerConfig    `yaml:"server"`
 	Storage   StorageConfig   `yaml:"storage"`
+	Security  SecurityConfig  `yaml:"security"`
 	Telegram  TelegramConfig  `yaml:"telegram"`
 	Streaming StreamingConfig `yaml:"streaming"`
 	AI        AIConfig        `yaml:"ai"`
@@ -35,6 +36,11 @@ type StorageConfig struct {
 	MaxVideoSizeMB int    `yaml:"max_video_size_mb"`
 }
 
+// SecurityConfig конфигурация безопасности
+type SecurityConfig struct {
+	SessionSecret string `yaml:"session_secret"`
+}
+
 // TelegramConfig конфигурация Telegram бота
 type TelegramConfig struct {
 	Token             string  `yaml:"token"`
@@ -51,11 +57,11 @@ type StreamingConfig struct {
 
 // AIConfig конфигурация AI модуля
 type AIConfig struct {
-	ModelPath   string  `yaml:"model_path"`
-	Enabled     bool    `yaml:"enabled"`
-	Threshold   float32 `yaml:"threshold"`
-	Classes     []string `yaml:"classes"`
-	DeviceType  string  `yaml:"device_type"` // cpu, gpu
+	ModelPath  string   `yaml:"model_path"`
+	Enabled    bool     `yaml:"enabled"`
+	Threshold  float32  `yaml:"threshold"`
+	Classes    []string `yaml:"classes"`
+	DeviceType string   `yaml:"device_type"` // cpu, gpu
 }
 
 // CameraConfig конфигурация камеры
@@ -75,19 +81,19 @@ type CameraConfig struct {
 // Load загружает конфигурацию из файла или создает дефолтную
 func Load(configPath string) (*Config, error) {
 	cfg := defaultConfig()
-	
+
 	// Определяем путь к конфигурации
 	if configPath == "" {
 		configPath = getDefaultConfigPath()
 	}
-	
+
 	// Пытаемся загрузить существующий файл
 	if _, err := os.Stat(configPath); err == nil {
 		data, err := os.ReadFile(configPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read config file: %w", err)
 		}
-		
+
 		if err := yaml.Unmarshal(data, cfg); err != nil {
 			return nil, fmt.Errorf("failed to parse config file: %w", err)
 		}
@@ -97,15 +103,15 @@ func Load(configPath string) (*Config, error) {
 			return nil, fmt.Errorf("failed to create default config: %w", err)
 		}
 	}
-	
+
 	// Переопределяем настройки из переменных окружения
 	cfg.overrideFromEnv()
-	
+
 	// Валидация конфигурации
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("config validation failed: %w", err)
 	}
-	
+
 	return cfg, nil
 }
 
@@ -115,16 +121,16 @@ func (c *Config) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
-	
+
 	data, err := yaml.Marshal(c)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
-	
+
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -133,27 +139,27 @@ func (c *Config) Validate() error {
 	if c.Server.Port == "" {
 		return fmt.Errorf("server port is required")
 	}
-	
+
 	if c.Storage.DatabasePath == "" {
 		return fmt.Errorf("database path is required")
 	}
-	
+
 	if c.Storage.VideoPath == "" {
 		return fmt.Errorf("video path is required")
 	}
-	
+
 	// Проверяем Telegram конфигурацию если токен задан
 	if c.Telegram.Token != "" && len(c.Telegram.AllowedUsers) == 0 {
 		return fmt.Errorf("telegram token specified but no allowed users")
 	}
-	
+
 	// Создаем необходимые директории
 	dirs := []string{
 		filepath.Dir(c.Storage.DatabasePath),
 		c.Storage.VideoPath,
 		filepath.Dir(c.AI.ModelPath),
 	}
-	
+
 	for _, dir := range dirs {
 		if dir != "" && dir != "." {
 			if err := os.MkdirAll(dir, 0755); err != nil {
@@ -161,7 +167,7 @@ func (c *Config) Validate() error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -203,17 +209,20 @@ func (c *Config) overrideFromEnv() {
 // defaultConfig возвращает конфигурацию по умолчанию
 func defaultConfig() *Config {
 	dataDir := getDataDir()
-	
+
 	return &Config{
 		Server: ServerConfig{
 			Host: "0.0.0.0",
 			Port: "8080",
 		},
 		Storage: StorageConfig{
-			DatabasePath:   filepath.Join(dataDir, "ocuai.db"),
+			DatabasePath:   filepath.Join(dataDir, "db", "ocuai.db"),
 			VideoPath:      filepath.Join(dataDir, "videos"),
 			RetentionDays:  7,
 			MaxVideoSizeMB: 50,
+		},
+		Security: SecurityConfig{
+			SessionSecret: "", // Будет сгенерирован автоматически
 		},
 		Telegram: TelegramConfig{
 			Token:             "",
@@ -241,13 +250,8 @@ func getDataDir() string {
 	if dataDir := os.Getenv("OCUAI_DATA_DIR"); dataDir != "" {
 		return dataDir
 	}
-	
-	// Пытаемся использовать стандартные пути
-	if homeDir, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(homeDir, ".ocuai")
-	}
-	
-	// Fallback to current directory
+
+	// Используем относительный путь к проекту для более предсказуемого поведения
 	return "./data"
 }
 
@@ -261,28 +265,28 @@ func (c *Config) IsNotificationTimeAllowed() bool {
 	if c.Telegram.NotificationHours == "" {
 		return true
 	}
-	
+
 	parts := strings.Split(c.Telegram.NotificationHours, "-")
 	if len(parts) != 2 {
 		return true
 	}
-	
+
 	startTime, err1 := time.Parse("15:04", strings.TrimSpace(parts[0]))
 	endTime, err2 := time.Parse("15:04", strings.TrimSpace(parts[1]))
-	
+
 	if err1 != nil || err2 != nil {
 		return true
 	}
-	
+
 	now := time.Now()
 	currentTime := time.Date(0, 1, 1, now.Hour(), now.Minute(), 0, 0, time.UTC)
 	startTime = time.Date(0, 1, 1, startTime.Hour(), startTime.Minute(), 0, 0, time.UTC)
 	endTime = time.Date(0, 1, 1, endTime.Hour(), endTime.Minute(), 0, 0, time.UTC)
-	
+
 	if startTime.Before(endTime) {
 		return currentTime.After(startTime) && currentTime.Before(endTime)
 	} else {
 		// Переход через полночь
 		return currentTime.After(startTime) || currentTime.Before(endTime)
 	}
-} 
+}
