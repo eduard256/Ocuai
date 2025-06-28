@@ -1,0 +1,1 @@
+/usr/bin/postgres "-D" "data/postgresql" "-p" "5432" "-k" "/tmp"

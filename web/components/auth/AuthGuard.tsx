@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth';
 
 interface AuthGuardProps {
@@ -11,6 +11,7 @@ interface AuthGuardProps {
 
 export function AuthGuard({ children, requireAuth = true }: AuthGuardProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { loading, isAuthenticated, setupRequired } = useAuthStore();
 
   useEffect(() => {
@@ -27,13 +28,25 @@ export function AuthGuard({ children, requireAuth = true }: AuthGuardProps) {
         }
       } else {
         // For auth pages (login/register)
-        if (isAuthenticated && !setupRequired) {
+        if (isAuthenticated) {
           router.replace('/dashboard');
+          return;
+        }
+        
+        // Block register page if setup is not required (users exist)
+        if (pathname === '/register' && !setupRequired) {
+          router.replace('/login');
+          return;
+        }
+        
+        // Redirect to register if setup is required and not on register page
+        if (setupRequired && pathname !== '/register') {
+          router.replace('/register');
           return;
         }
       }
     }
-  }, [loading, isAuthenticated, setupRequired, requireAuth, router]);
+  }, [loading, isAuthenticated, setupRequired, requireAuth, router, pathname]);
 
   // Show loading state
   if (loading) {

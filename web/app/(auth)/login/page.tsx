@@ -10,6 +10,7 @@ import { AuthGuard } from '@/components/auth/AuthGuard';
 export default function LoginPage() {
   const router = useRouter();
   const login = useAuthStore((state) => state.login);
+  const setupRequired = useAuthStore((state) => state.setupRequired);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -150,15 +151,17 @@ export default function LoginPage() {
                 </button>
               </div>
 
-              {/* Register Link */}
-              <div className="text-center">
-                <Link
-                  href="/register"
-                  className="text-sm text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 font-medium"
-                >
-                  Need to create an account? Register here
-                </Link>
-              </div>
+              {/* Register Link - Only show if setup is required (no users exist) */}
+              {setupRequired && (
+                <div className="text-center">
+                  <Link
+                    href="/register"
+                    className="text-sm text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 font-medium"
+                  >
+                    Need to create an account? Register here
+                  </Link>
+                </div>
+              )}
             </form>
           </div>
         </div>

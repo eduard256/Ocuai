@@ -71,7 +71,7 @@ export interface Settings {
 
 export interface WebSocketMessage {
   type: 'stats_update' | 'camera_status' | 'new_event' | 'motion_detected' | 
-        'ai_detection' | 'system_alert' | 'camera_added' | 'camera_removed' | 'camera_updated';
+        'ai_detection' | 'system_alert' | 'camera_removed' | 'camera_updated';
   data?: any;
   camera_id?: string;
   camera_name?: string;

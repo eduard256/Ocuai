@@ -216,7 +216,7 @@ export default function RegisterPage() {
                 </div>
               )}
 
-              {/* Login Link */}
+              {/* Login Link - Only show if setup is NOT required (users exist) */}
               {!setupRequired && (
                 <div className="text-center">
                   <Link

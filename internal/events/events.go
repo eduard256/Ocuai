@@ -221,8 +221,8 @@ func (m *Manager) setupCronJobs() {
 		log.Printf("Failed to add cleanup cron job: %v", err)
 	}
 
-	// Проверка статуса камер (каждые 30 секунд)
-	_, err = m.cron.AddFunc("*/30 * * * * *", func() {
+	// Проверка статуса камер (каждые 30 минут)
+	_, err = m.cron.AddFunc("*/30 * * * *", func() {
 		m.checkCameraStatus()
 	})
 	if err != nil {

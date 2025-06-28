@@ -39,8 +39,12 @@ export default function DashboardPage() {
     return `${minutes}m`;
   };
 
-  const onlineCameras = cameras.filter(cam => cam.status === 'online');
-  const recentEvents = events.slice(0, 5);
+  // Ensure cameras is always an array to prevent filter errors
+  const camerasArray = Array.isArray(cameras) ? cameras : [];
+  const eventsArray = Array.isArray(events) ? events : [];
+  
+  const onlineCameras = camerasArray.filter(cam => cam.status === 'online');
+  const recentEvents = eventsArray.slice(0, 5);
 
   return (
     <div className="p-6 space-y-6">
@@ -146,7 +150,7 @@ export default function DashboardPage() {
                 Active Cameras
               </h3>
               <span className="text-sm text-gray-500 dark:text-gray-400">
-                {onlineCameras.length} of {cameras.length}
+                {onlineCameras.length} of {camerasArray.length}
               </span>
             </div>
           </div>
@@ -165,9 +169,9 @@ export default function DashboardPage() {
                     <span className="text-xs text-green-600 dark:text-green-400">Online</span>
                   </div>
                 ))}
-                {cameras.length > 4 && (
+                {camerasArray.length > 4 && (
                   <a href="/cameras" className="block text-center text-sm text-blue-600 hover:text-blue-700">
-                    View all cameras ({cameras.length})
+                    View all cameras ({camerasArray.length})
                   </a>
                 )}
               </div>
@@ -178,17 +182,8 @@ export default function DashboardPage() {
                   No active cameras
                 </h3>
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  Add a camera to start monitoring
+                  Cameras will appear here when available
                 </p>
-                <div className="mt-6">
-                  <a
-                    href="/cameras"
-                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-                  >
-                    <Camera className="-ml-1 mr-2 h-5 w-5" />
-                    Add Camera
-                  </a>
-                </div>
               </div>
             )}
           </div>

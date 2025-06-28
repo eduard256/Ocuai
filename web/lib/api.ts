@@ -1,13 +1,18 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
-import { ApiResponse } from '@/types';
+
+interface ApiResponse<T = any> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
 
 class ApiClient {
   private client: AxiosInstance;
 
   constructor() {
     this.client = axios.create({
-      baseURL: process.env.NEXT_PUBLIC_API_URL || '/api',
-      timeout: 30000,
+      baseURL: '/api',
+      timeout: 120000,
       withCredentials: true,
       headers: {
         'Content-Type': 'application/json',
@@ -74,10 +79,6 @@ class ApiClient {
     return this.client.get(`/cameras/${id}`);
   }
 
-  async createCamera(data: any): Promise<ApiResponse> {
-    return this.client.post('/cameras', data);
-  }
-
   async updateCamera(id: string, data: any): Promise<ApiResponse> {
     return this.client.put(`/cameras/${id}`, data);
   }
@@ -122,4 +123,34 @@ class ApiClient {
   }
 }
 
-export const api = new ApiClient(); 
+export const api = new ApiClient();
+
+// Export convenience methods
+export const API = {
+  // Auth
+  checkSetup: () => api.checkSetup(),
+  register: (username: string, password: string) => api.register(username, password),
+  login: (username: string, password: string) => api.login(username, password),
+  logout: () => api.logout(),
+  checkAuthStatus: () => api.checkAuthStatus(),
+  
+  // Cameras
+  getCameras: () => api.getCameras(),
+  getCamera: (id: string) => api.getCamera(id),
+  updateCamera: (id: string, data: any) => api.updateCamera(id, data),
+  deleteCamera: (id: string) => api.deleteCamera(id),
+  testCamera: (id: string) => api.testCamera(id),
+  
+  // Events
+  getEvents: (params?: { limit?: number; offset?: number; camera_id?: string }) => api.getEvents(params),
+  getEvent: (id: number) => api.getEvent(id),
+  deleteEvent: (id: number) => api.deleteEvent(id),
+  
+  // System
+  getStats: () => api.getStats(),
+  getHealth: () => api.getHealth(),
+  
+  // Settings
+  getSettings: () => api.getSettings(),
+  updateSettings: (settings: any) => api.updateSettings(settings),
+}; 

@@ -1,0 +1,18 @@
+# Go2RTC Configuration
+# Generated automatically from database
+# DO NOT EDIT MANUALLY
+
+api:
+  listen: ":1984"
+
+streams:
+  # No active cameras configured
+
+webrtc:
+  listen: ":8555"
+  candidates:
+    - stun:stun.l.google.com:19302
+
+log:
+  level: info
+  format: text

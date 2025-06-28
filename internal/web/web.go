@@ -27,6 +27,8 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+var startTime = time.Now()
+
 // Server представляет веб-сервер
 type Server struct {
 	config          *config.Config
@@ -135,7 +137,6 @@ func (s *Server) Router() http.Handler {
 			// Камеры
 			r.Route("/cameras", func(r chi.Router) {
 				r.Get("/", s.getCamerasHandler)
-				r.Post("/", s.createCameraHandler)
 				r.Get("/{id}", s.getCameraHandler)
 				r.Put("/{id}", s.updateCameraHandler)
 				r.Delete("/{id}", s.deleteCameraHandler)
@@ -197,6 +198,9 @@ func (s *Server) statsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Добавляем реальный uptime в секундах
+	stats["system_uptime"] = int64(time.Since(startTime).Seconds())
+
 	render.JSON(w, r, APIResponse{
 		Success: true,
 		Data:    stats,
@@ -239,56 +243,6 @@ func (s *Server) getCameraHandler(w http.ResponseWriter, r *http.Request) {
 			Error:   "Camera not found",
 		})
 		return
-	}
-
-	render.JSON(w, r, APIResponse{
-		Success: true,
-		Data:    camera,
-	})
-}
-
-// createCameraHandler создает новую камеру
-func (s *Server) createCameraHandler(w http.ResponseWriter, r *http.Request) {
-	var req CameraRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		render.JSON(w, r, APIResponse{
-			Success: false,
-			Error:   "Invalid request body: " + err.Error(),
-		})
-		return
-	}
-
-	// Валидация
-	if req.Name == "" || req.RTSPURL == "" {
-		render.JSON(w, r, APIResponse{
-			Success: false,
-			Error:   "Name and RTSP URL are required",
-		})
-		return
-	}
-
-	camera := &storage.Camera{
-		ID:              generateCameraID(),
-		Name:            req.Name,
-		RTSPURL:         req.RTSPURL,
-		Status:          "offline",
-		MotionDetection: req.MotionDetection,
-		AIDetection:     req.AIDetection,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
-	}
-
-	if err := s.storage.SaveCamera(camera); err != nil {
-		render.JSON(w, r, APIResponse{
-			Success: false,
-			Error:   "Failed to save camera: " + err.Error(),
-		})
-		return
-	}
-
-	// Добавляем камеру в стриминг сервер
-	if err := s.streamingServer.AddCamera(camera.ID, req.RTSPURL); err != nil {
-		log.Printf("Failed to add camera to streaming server: %v", err)
 	}
 
 	render.JSON(w, r, APIResponse{
@@ -469,8 +423,8 @@ func (s *Server) deleteEventHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) streamHandler(w http.ResponseWriter, r *http.Request) {
 	cameraID := chi.URLParam(r, "id")
 
-	// Проксирование к go2rtc или возвращение RTSP URL
-	streamURL := fmt.Sprintf("http://localhost:%d/stream/%s", s.config.Streaming.WebRTCPort, cameraID)
+	// Проксирование к go2rtc WebUI
+	streamURL := fmt.Sprintf("http://localhost:1984/stream/%s", cameraID)
 
 	http.Redirect(w, r, streamURL, http.StatusFound)
 }
@@ -707,3 +661,5 @@ func (s *Server) fallbackHandler(w http.ResponseWriter, r *http.Request) {
 func generateCameraID() string {
 	return fmt.Sprintf("cam_%d", time.Now().UnixNano())
 }
+
+// Camera Scanner Handlers

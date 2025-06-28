@@ -10,6 +10,7 @@ import (
 	"ocuai/internal/ai"
 	"ocuai/internal/config"
 	"ocuai/internal/events"
+	"ocuai/internal/go2rtc"
 
 	"gocv.io/x/gocv"
 )
@@ -24,6 +25,8 @@ type Server struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	wg           sync.WaitGroup
+	go2rtc       *go2rtc.Manager
+	scanner      *go2rtc.CameraScanner
 }
 
 // CameraStream представляет поток с камеры
@@ -48,6 +51,13 @@ type CameraStream struct {
 func New(cfg config.StreamingConfig, eventManager *events.Manager, aiProcessor *ai.Processor) (*Server, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// Создаем менеджер go2rtc
+	go2rtcManager, err := go2rtc.New("./data/go2rtc")
+	if err != nil {
+		cancel() // Ensure cancel is called on error path
+		return nil, fmt.Errorf("failed to create go2rtc manager: %w", err)
+	}
+
 	server := &Server{
 		config:       cfg,
 		eventManager: eventManager,
@@ -55,6 +65,8 @@ func New(cfg config.StreamingConfig, eventManager *events.Manager, aiProcessor *
 		cameras:      make(map[string]*CameraStream),
 		ctx:          ctx,
 		cancel:       cancel,
+		go2rtc:       go2rtcManager,
+		scanner:      go2rtc.NewScanner(go2rtcManager),
 	}
 
 	return server, nil
@@ -64,8 +76,12 @@ func New(cfg config.StreamingConfig, eventManager *events.Manager, aiProcessor *
 func (s *Server) Start() error {
 	log.Printf("Starting streaming server on ports RTSP:%d, WebRTC:%d", s.config.RTSPPort, s.config.WebRTCPort)
 
-	// Здесь должна быть инициализация go2rtc сервера
-	// Пока просто запускаем обработку камер
+	// Запускаем go2rtc
+	if err := s.go2rtc.Start(); err != nil {
+		return fmt.Errorf("failed to start go2rtc: %w", err)
+	}
+
+	// Запускаем обработку камер
 	s.wg.Add(1)
 	go s.processStreams()
 
@@ -84,37 +100,13 @@ func (s *Server) Close() {
 	s.mu.Unlock()
 
 	s.wg.Wait()
+
+	// Останавливаем go2rtc
+	if s.go2rtc != nil {
+		s.go2rtc.Stop()
+	}
+
 	log.Println("Streaming server stopped")
-}
-
-// AddCamera добавляет камеру
-func (s *Server) AddCamera(id, rtspURL string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, exists := s.cameras[id]; exists {
-		return fmt.Errorf("camera %s already exists", id)
-	}
-
-	ctx, cancel := context.WithCancel(s.ctx)
-	camera := &CameraStream{
-		ID:              id,
-		RTSPURL:         rtspURL,
-		Status:          "connecting",
-		MotionDetection: true,
-		AIDetection:     true,
-		ctx:             ctx,
-		cancel:          cancel,
-	}
-
-	s.cameras[id] = camera
-
-	// Запускаем обработку камеры
-	camera.wg.Add(1)
-	go s.processCameraStream(camera)
-
-	log.Printf("Added camera %s with RTSP URL: %s", id, rtspURL)
-	return nil
 }
 
 // RemoveCamera удаляет камеру
@@ -380,4 +372,103 @@ func (s *Server) GetCameraList() []map[string]interface{} {
 	}
 
 	return cameras
+}
+
+// RemoveCameraCompletely полностью удаляет камеру из системы
+func (s *Server) RemoveCameraCompletely(cameraID string) error {
+	// Удаляем из нашего списка
+	s.RemoveCamera(cameraID)
+
+	// Удаляем из go2rtc
+	if err := s.go2rtc.RemoveStream(cameraID); err != nil {
+		log.Printf("Failed to remove stream from go2rtc: %v", err)
+	}
+
+	return nil
+}
+
+// GetGo2rtcStreams возвращает все потоки из go2rtc
+func (s *Server) GetGo2rtcStreams() (map[string]go2rtc.Stream, error) {
+	return s.go2rtc.GetStreams()
+}
+
+// GetGo2rtcStreamURL возвращает URL для доступа к потоку
+func (s *Server) GetGo2rtcStreamURL(streamID, protocol string) string {
+	return s.go2rtc.GetStreamURL(streamID, protocol)
+}
+
+// TestStreamURL тестирует URL потока
+func (s *Server) TestStreamURL(streamURL string) error {
+	return s.go2rtc.TestStream(streamURL)
+}
+
+// SyncWithGo2rtc синхронизирует камеры с go2rtc
+func (s *Server) SyncWithGo2rtc() error {
+	// Получаем все потоки из go2rtc
+	streams, err := s.go2rtc.GetStreams()
+	if err != nil {
+		return fmt.Errorf("failed to get go2rtc streams: %w", err)
+	}
+
+	// Проверяем, какие камеры есть в go2rtc, но нет у нас
+	for streamID := range streams {
+		s.mu.RLock()
+		_, exists := s.cameras[streamID]
+		s.mu.RUnlock()
+
+		if !exists {
+			// Камера есть в go2rtc, но не у нас
+			log.Printf("Stream %s exists in go2rtc but not locally", streamID)
+		}
+	}
+
+	// Проверяем, какие камеры есть у нас, но нет в go2rtc
+	s.mu.RLock()
+	cameraIDs := make([]string, 0, len(s.cameras))
+	for id := range s.cameras {
+		cameraIDs = append(cameraIDs, id)
+	}
+	s.mu.RUnlock()
+
+	for _, cameraID := range cameraIDs {
+		if _, exists := streams[cameraID]; !exists {
+			// Камера есть у нас, но нет в go2rtc
+			log.Printf("Camera %s exists locally but not in go2rtc", cameraID)
+		}
+	}
+
+	return nil
+}
+
+// GetStreamingInfo возвращает информацию о стриминг сервере
+func (s *Server) GetStreamingInfo() map[string]interface{} {
+	info := map[string]interface{}{
+		"go2rtc_running": s.go2rtc != nil,
+		"rtsp_port":      s.config.RTSPPort,
+		"webrtc_port":    s.config.WebRTCPort,
+		"api_port":       1984,
+		"cameras_count":  len(s.cameras),
+	}
+
+	// Добавляем информацию о go2rtc потоках
+	if streams, err := s.go2rtc.GetStreams(); err == nil {
+		info["go2rtc_streams_count"] = len(streams)
+	}
+
+	return info
+}
+
+// RemoveTestStream удаляет тестовый поток из go2rtc
+func (s *Server) RemoveTestStream(cameraID string) error {
+	return s.go2rtc.RemoveStream(cameraID)
+}
+
+// RestartGo2rtc перезапускает процесс go2rtc
+func (s *Server) RestartGo2rtc() error {
+	if s.go2rtc == nil {
+		return fmt.Errorf("go2rtc manager is not initialized")
+	}
+
+	log.Printf("🔄 Restarting go2rtc to apply configuration changes...")
+	return s.go2rtc.Restart()
 }

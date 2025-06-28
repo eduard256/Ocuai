@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Plus, Edit, Trash2, Play, RefreshCw } from 'lucide-react';
+import { useEffect } from 'react';
+import { Edit, Trash2, RefreshCw } from 'lucide-react';
 import { useAppStore } from '@/stores/app';
+import VideoPlayer from '@/components/cameras/VideoPlayer';
 
 export default function CamerasPage() {
   const { cameras, loadCameras, deleteCamera } = useAppStore();
@@ -22,13 +23,6 @@ export default function CamerasPage() {
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Cameras</h1>
-        <button
-          onClick={() => alert('Add camera modal coming soon!')}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Add Camera
-        </button>
       </div>
 
       {/* Cameras Grid */}
@@ -37,22 +31,11 @@ export default function CamerasPage() {
           {cameras.map((camera) => (
             <div key={camera.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
               {/* Camera Preview */}
-              <div className="aspect-video bg-gray-900 relative">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center">
-                    <Play className="h-12 w-12 text-gray-600 mx-auto mb-2" />
-                    <p className="text-sm text-gray-500">Click to view stream</p>
-                  </div>
-                </div>
-                {/* Status Badge */}
-                <div className={`absolute top-2 right-2 px-2 py-1 rounded text-xs font-medium ${
-                  camera.status === 'online' 
-                    ? 'bg-green-100 text-green-800' 
-                    : 'bg-red-100 text-red-800'
-                }`}>
-                  {camera.status}
-                </div>
-              </div>
+              <VideoPlayer 
+                streamId={camera.id} 
+                cameraName={camera.name}
+                className="aspect-video"
+              />
 
               {/* Camera Info */}
               <div className="p-4">
@@ -98,20 +81,11 @@ export default function CamerasPage() {
         <div className="text-center py-12">
           <div className="mx-auto h-24 w-24 text-gray-400">
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 002 2v8a2 2 0 002 2z" />
             </svg>
           </div>
           <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">No cameras</h3>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Get started by adding a new camera.</p>
-          <div className="mt-6">
-            <button
-              onClick={() => alert('Add camera modal coming soon!')}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"
-            >
-              <Plus className="mr-2 h-5 w-5" />
-              Add Camera
-            </button>
-          </div>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Cameras will appear here when available.</p>
         </div>
       )}
     </div>

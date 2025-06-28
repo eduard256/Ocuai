@@ -10,6 +10,10 @@ const nextConfig = {
         source: '/ws',
         destination: 'http://localhost:8080/ws',
       },
+      {
+        source: '/go2rtc/:path*',
+        destination: 'http://localhost:1984/:path*',
+      },
     ];
   },
   reactStrictMode: true,

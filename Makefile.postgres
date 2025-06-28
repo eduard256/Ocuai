@@ -1,0 +1,188 @@
+# Ocuai Camera Management System with PostgreSQL
+# Professional deployment configuration
+
+.PHONY: help setup build start stop clean test logs docker-up docker-down migrate
+
+# Variables
+POSTGRES_VERSION=15
+POSTGRES_USER=ocuai
+POSTGRES_PASSWORD=ocuai123
+POSTGRES_DB=ocuai
+POSTGRES_PORT=5432
+APP_PORT=8080
+GO2RTC_VERSION=1.8.4
+
+# Default target
+help:
+	@echo "Ocuai Camera Management System with PostgreSQL"
+	@echo ""
+	@echo "Available targets:"
+	@echo "  setup        - Setup development environment"
+	@echo "  build        - Build the application"
+	@echo "  start        - Start all services (PostgreSQL + App)"
+	@echo "  stop         - Stop all services"
+	@echo "  clean        - Clean up containers and volumes"
+	@echo "  test         - Run tests"
+	@echo "  logs         - Show application logs"
+	@echo "  docker-up    - Start only PostgreSQL in Docker"
+	@echo "  docker-down  - Stop PostgreSQL Docker container"
+	@echo "  migrate      - Run database migrations"
+
+# Setup development environment
+setup:
+	@echo "🔧 Setting up development environment..."
+	@mkdir -p data/go2rtc/bin
+	@mkdir -p data/logs
+	@chmod +x scripts/download-go2rtc.sh
+	@scripts/download-go2rtc.sh
+	@echo "✅ Development environment ready"
+
+# Build the application
+build:
+	@echo "🏗️ Building application..."
+	@go mod tidy
+	@go build -o bin/ocuai-postgres cmd/ocuai-postgres/main.go
+	@echo "✅ Application built successfully"
+
+# Start PostgreSQL using Docker
+docker-up:
+	@echo "🐳 Starting PostgreSQL database..."
+	@docker run -d \
+		--name ocuai-postgres \
+		-e POSTGRES_USER=$(POSTGRES_USER) \
+		-e POSTGRES_PASSWORD=$(POSTGRES_PASSWORD) \
+		-e POSTGRES_DB=$(POSTGRES_DB) \
+		-p $(POSTGRES_PORT):5432 \
+		-v ocuai_postgres_data:/var/lib/postgresql/data \
+		postgres:$(POSTGRES_VERSION)
+	@echo "⏳ Waiting for PostgreSQL to be ready..."
+	@sleep 5
+	@echo "✅ PostgreSQL is running on port $(POSTGRES_PORT)"
+
+# Stop PostgreSQL Docker container
+docker-down:
+	@echo "🛑 Stopping PostgreSQL database..."
+	@docker stop ocuai-postgres || true
+	@docker rm ocuai-postgres || true
+	@echo "✅ PostgreSQL stopped"
+
+# Run database migrations
+migrate: docker-up
+	@echo "📊 Running database migrations..."
+	@sleep 3
+	@POSTGRES_HOST=localhost \
+	 POSTGRES_PORT=$(POSTGRES_PORT) \
+	 POSTGRES_USER=$(POSTGRES_USER) \
+	 POSTGRES_PASSWORD=$(POSTGRES_PASSWORD) \
+	 POSTGRES_DB=$(POSTGRES_DB) \
+	 POSTGRES_SSLMODE=disable \
+	 go run cmd/ocuai-postgres/main.go --migrate-only || true
+	@echo "✅ Migrations completed"
+
+# Start all services
+start: setup build docker-up migrate
+	@echo "🚀 Starting Ocuai Camera Management System..."
+	@sleep 2
+	@export POSTGRES_HOST=localhost && \
+	 export POSTGRES_PORT=$(POSTGRES_PORT) && \
+	 export POSTGRES_USER=$(POSTGRES_USER) && \
+	 export POSTGRES_PASSWORD=$(POSTGRES_PASSWORD) && \
+	 export POSTGRES_DB=$(POSTGRES_DB) && \
+	 export POSTGRES_SSLMODE=disable && \
+	 export PORT=$(APP_PORT) && \
+	 export GO2RTC_PATH=./data/go2rtc/bin/go2rtc && \
+	 export GO2RTC_CONFIG=./data/go2rtc/go2rtc.yaml && \
+	 ./bin/ocuai-postgres
+
+# Stop all services
+stop:
+	@echo "🛑 Stopping all services..."
+	@pkill -f "ocuai-postgres" || true
+	@pkill -f "go2rtc" || true
+	@make docker-down
+	@echo "✅ All services stopped"
+
+# Clean up everything
+clean: stop
+	@echo "🧹 Cleaning up..."
+	@docker volume rm ocuai_postgres_data || true
+	@rm -f bin/ocuai-postgres
+	@rm -f data/go2rtc/go2rtc.yaml
+	@rm -f data/go2rtc/go2rtc.pid
+	@echo "✅ Cleanup completed"
+
+# Show application logs
+logs:
+	@echo "📋 Application logs:"
+	@tail -f data/logs/ocuai.log || echo "No logs available"
+
+# Test the API endpoints
+test:
+	@echo "🧪 Testing API endpoints..."
+	@echo "Testing health check..."
+	@curl -s http://localhost:$(APP_PORT)/api/cameras/status || echo "❌ Health check failed"
+	@echo ""
+	@echo "Testing cameras list..."
+	@curl -s http://localhost:$(APP_PORT)/api/cameras || echo "❌ Cameras list failed"
+	@echo ""
+	@echo "✅ Basic tests completed"
+
+# Development mode - start with hot reload
+dev: setup docker-up migrate
+	@echo "🔄 Starting in development mode..."
+	@export POSTGRES_HOST=localhost && \
+	 export POSTGRES_PORT=$(POSTGRES_PORT) && \
+	 export POSTGRES_USER=$(POSTGRES_USER) && \
+	 export POSTGRES_PASSWORD=$(POSTGRES_PASSWORD) && \
+	 export POSTGRES_DB=$(POSTGRES_DB) && \
+	 export POSTGRES_SSLMODE=disable && \
+	 export PORT=$(APP_PORT) && \
+	 export GO2RTC_PATH=./data/go2rtc/bin/go2rtc && \
+	 export GO2RTC_CONFIG=./data/go2rtc/go2rtc.yaml && \
+	 go run cmd/ocuai-postgres/main.go
+
+# Production build and start
+prod: setup build docker-up migrate
+	@echo "🏭 Starting in production mode..."
+	@export POSTGRES_HOST=localhost && \
+	 export POSTGRES_PORT=$(POSTGRES_PORT) && \
+	 export POSTGRES_USER=$(POSTGRES_USER) && \
+	 export POSTGRES_PASSWORD=$(POSTGRES_PASSWORD) && \
+	 export POSTGRES_DB=$(POSTGRES_DB) && \
+	 export POSTGRES_SSLMODE=disable && \
+	 export PORT=$(APP_PORT) && \
+	 export GO2RTC_PATH=./data/go2rtc/bin/go2rtc && \
+	 export GO2RTC_CONFIG=./data/go2rtc/go2rtc.yaml && \
+	 nohup ./bin/ocuai-postgres > data/logs/ocuai.log 2>&1 &
+	@echo "✅ Production server started in background"
+	@echo "📋 Check logs with: make logs"
+
+# Database shell
+db-shell:
+	@echo "🐚 Connecting to database..."
+	@docker exec -it ocuai-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
+
+# Create test data
+test-data:
+	@echo "📊 Creating test data..."
+	@curl -X POST http://localhost:$(APP_PORT)/api/cameras \
+		-H "Content-Type: application/json" \
+		-d '{"name":"Test Camera 1","url":"rtsp://demo:demo@ipvmdemo.dyndns.org:5541/onvif-media/media.amp","description":"Demo RTSP camera"}' || true
+	@curl -X POST http://localhost:$(APP_PORT)/api/cameras \
+		-H "Content-Type: application/json" \
+		-d '{"name":"Test Camera 2","url":"rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mp4","description":"Demo MP4 stream"}' || true
+	@echo "✅ Test data created"
+
+# System status
+status:
+	@echo "📊 System Status:"
+	@echo "===================="
+	@echo -n "PostgreSQL: "
+	@docker ps --filter name=ocuai-postgres --format "{{.Status}}" || echo "Not running"
+	@echo -n "Application: "
+	@pgrep -f "ocuai-postgres" > /dev/null && echo "Running" || echo "Not running"
+	@echo -n "go2rtc: "
+	@pgrep -f "go2rtc" > /dev/null && echo "Running" || echo "Not running"
+	@echo ""
+	@echo "API Status:"
+	@curl -s http://localhost:$(APP_PORT)/api/cameras/status | python3 -m json.tool || echo "API not responding" 
